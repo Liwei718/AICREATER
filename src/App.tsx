@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import newsData from './data/ai-news.generated.json';
+import AiBasicsLearningPage from './pages/AiBasicsLearningPage';
+import CreativeLabPage from './pages/CreativeLabPage';
+import CreatorChallengePage from './pages/CreatorChallengePage';
 
 type RegionFilter = 'all' | '中国' | '国际';
 const FAVORITES_KEY = 'ai-news-favorites-v1';
@@ -117,6 +120,9 @@ function getNewsScore(news: NewsItem) {
 }
 
 function App() {
+  const isAiBasicsPage = window.location.pathname === '/ai-basics';
+  const isCreativeLabPage = window.location.pathname === '/creative-lab';
+  const isCreatorChallengePage = window.location.pathname === '/creator-challenge';
   const [regionFilter, setRegionFilter] = useState<RegionFilter>('all');
   const [keyword, setKeyword] = useState('');
   const [teenOnly, setTeenOnly] = useState(false);
@@ -815,6 +821,18 @@ function App() {
   }
 
   function openModule(module: ModuleKey) {
+    if (module === 'ai-basics') {
+      window.location.href = '/ai-basics';
+      return;
+    }
+    if (module === 'creative-lab') {
+      window.location.href = '/creative-lab';
+      return;
+    }
+    if (module === 'creator-challenge') {
+      window.location.href = '/creator-challenge';
+      return;
+    }
     setActiveModule(module);
     window.location.hash = module;
     requestAnimationFrame(() => {
@@ -1153,6 +1171,18 @@ function App() {
     }
   }, []);
 
+  if (isAiBasicsPage) {
+    return <AiBasicsLearningPage />;
+  }
+
+  if (isCreativeLabPage) {
+    return <CreativeLabPage />;
+  }
+
+  if (isCreatorChallengePage) {
+    return <CreatorChallengePage />;
+  }
+
   return (
     <main className="site">
       <div className="auth-quick-entry" aria-label="登录入口">
@@ -1281,7 +1311,7 @@ function App() {
         <div className="grid-3">
           {coreModules.map((module) => (
             <article
-              className={activeModule === module.id ? 'card module-card active' : 'card module-card'}
+              className="card module-card"
               key={module.title}
               onClick={() => openModule(module.id)}
               onKeyDown={(event) => {
@@ -1311,88 +1341,10 @@ function App() {
         </div>
       </section>
 
-      <section className="panel" ref={learningDetailRef}>
-        <h2>模块深入：AI 基础认知</h2>
-        {activeModule === 'ai-basics' ? (
-          <div className="ai-basics-detail">
-            <div className="concept-visual">
-              <h3>1) 什么是 AI？</h3>
-              <p>
-                可以把 AI 想成“会学习的数字大脑”：它从数据中找规律，再根据任务给出预测、生成或决策。
-              </p>
-              <div className="flow-wrap">
-                <div className="flow-box">数据输入</div>
-                <span className="flow-arrow" aria-hidden="true" />
-                <div className="flow-box">模型学习</div>
-                <span className="flow-arrow" aria-hidden="true" />
-                <div className="flow-box">结果输出</div>
-              </div>
-            </div>
-
-            <div className="timeline-wrap">
-              <h3>2) AI 是谁提出来的？如何发展？</h3>
-              <ul className="timeline-list">
-                {aiTimeline.map((item) => (
-                  <li key={item.stage}>
-                    <p className="timeline-stage">{item.stage}</p>
-                    <h4>{item.title}</h4>
-                    <p>{item.detail}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="eval-wrap">
-              <h3>3) 评价一个 AI，要看哪些方面？</h3>
-              <p>下面用“能力刻度条”演示常见评价维度（数值仅用于教学示意）。</p>
-              <ul className="eval-list">
-                {evalDimensions.map((dimension) => (
-                  <li key={dimension.label}>
-                    <span>{dimension.label}</span>
-                    <div className="eval-track">
-                      <div className="eval-bar" style={{ width: `${dimension.score}%` }} />
-                    </div>
-                    <strong>{dimension.score}</strong>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="scientists-wrap">
-              <h3>4) 国内外杰出 AI 科学家与代表成果</h3>
-              <div className="scientists-grid">
-                {scientists.map((person) => (
-                  <article className="scientist-card" key={person.name}>
-                    <img
-                      className="scientist-avatar"
-                      src={person.avatar}
-                      alt={`${person.name} 头像`}
-                      loading="lazy"
-                      onError={(event) => {
-                        const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=DFE9FF&color=2A468A&size=200`;
-                        if (event.currentTarget.src !== fallback) {
-                          event.currentTarget.src = fallback;
-                        }
-                      }}
-                    />
-                    <h4>{person.name}</h4>
-                    <p className="person-area">{person.area}</p>
-                    <p>{person.contribution}</p>
-                    <p>
-                      <strong>代表成果：</strong>
-                      {person.products}
-                    </p>
-                    <p>
-                      <strong>机构/公司：</strong>
-                      {person.org}
-                    </p>
-                  </article>
-                ))}
-              </div>
-              <p className="avatar-note">头像来源：Wikipedia/机构公开页面（仅用于教学展示）。</p>
-            </div>
-          </div>
-        ) : activeModule === 'creative-lab' ? (
+      {activeModule !== 'ai-basics' ? (
+        <section className="panel" ref={learningDetailRef}>
+          <h2>模块深入：{coreModules.find((m) => m.id === activeModule)?.title}</h2>
+          {activeModule === 'creative-lab' ? (
           <div className="creative-lab-detail">
             <div className="lab-intro">
               <h3>创意实战工坊总目标</h3>
@@ -1820,8 +1772,9 @@ function App() {
           <p className="coming-soon-tip">
             你当前选择的是“{coreModules.find((m) => m.id === activeModule)?.title}”。该模块的深入内容正在制作中，将包含项目闯关与互动练习。
           </p>
-        )}
-      </section>
+          )}
+        </section>
+      ) : null}
 
       <section className="panel book">
         <div>
