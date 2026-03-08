@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Parser from 'rss-parser';
@@ -7,6 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const sourceOutputPath = path.resolve(__dirname, '../src/data/ai-news.generated.json');
 const publicOutputPath = path.resolve(__dirname, '../public/ai-news.generated.json');
+const distOutputPath = path.resolve(__dirname, '../dist/ai-news.generated.json');
+export const NEWS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const feeds = [
   {
@@ -188,7 +191,15 @@ async function collectFeedItems(feed) {
   }
 }
 
-async function run() {
+function getOutputPaths() {
+  const outputPaths = [sourceOutputPath, publicOutputPath];
+  if (fsSync.existsSync(path.dirname(distOutputPath))) {
+    outputPaths.push(distOutputPath);
+  }
+  return outputPaths;
+}
+
+export async function run() {
   const previous = await loadPreviousData();
   const sourceItems = await Promise.all(feeds.map((feed) => collectFeedItems(feed)));
   const diversified = sourceItems.flatMap((items) => items.slice(0, 2));
@@ -205,7 +216,7 @@ async function run() {
     items: finalItems,
   };
 
-  const outputPaths = [sourceOutputPath, publicOutputPath];
+  const outputPaths = getOutputPaths();
 
   await Promise.all(
     outputPaths.map(async (targetPath) => {
@@ -215,11 +226,52 @@ async function run() {
   );
 
   console.log(
-    `[news:update] 已更新 ${finalItems.length} 条新闻 -> ${sourceOutputPath} & ${publicOutputPath}`,
+    `[news:update] 已更新 ${finalItems.length} 条新闻 -> ${outputPaths.join(' & ')}`,
   );
+
+  return output;
 }
 
-run().catch((error) => {
-  console.error('[news:update] 执行失败', error);
-  process.exitCode = 1;
-});
+export function startNewsAutoRefresh(options = {}) {
+  const intervalMs = Number(options.intervalMs ?? NEWS_REFRESH_INTERVAL_MS);
+  const label = options.label ?? 'news:auto';
+
+  let running = false;
+
+  const refresh = async () => {
+    if (running) {
+      console.log(`[${label}] 上一次新闻刷新仍在执行，跳过本轮。`);
+      return;
+    }
+
+    running = true;
+    try {
+      await run();
+      console.log(`[${label}] 下一次刷新将在 ${Math.round(intervalMs / 1000)} 秒后执行。`);
+    } catch (error) {
+      console.error(`[${label}] 新闻刷新失败`, error);
+    } finally {
+      running = false;
+    }
+  };
+
+  refresh();
+  const timer = setInterval(refresh, intervalMs);
+
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+
+  return timer;
+}
+
+const executedDirectly = process.argv[1]
+  ? path.resolve(process.argv[1]) === __filename
+  : false;
+
+if (executedDirectly) {
+  run().catch((error) => {
+    console.error('[news:update] 执行失败', error);
+    process.exitCode = 1;
+  });
+}

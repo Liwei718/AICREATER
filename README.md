@@ -37,6 +37,8 @@ npm run news:update
 
 说明：`npm run dev` 与 `npm run build` 会先自动执行一次新闻更新。
 
+当 Node 后端服务运行时（例如 `node server/visit-api.mjs` 或 `npm run local`），服务启动后会立即刷新一次新闻，并每 5 分钟自动重新抓取一次，前端页面也会每 5 分钟重新拉取最新 JSON。
+
 更新策略：
 
 - 自动去重（标题+链接）
@@ -65,6 +67,34 @@ npm run dev
 npm run build
 npm run preview
 ```
+
+## 云端部署后端（推荐同服务托管前端 + API）
+
+后端入口文件：
+
+- [server/visit-api.mjs](server/visit-api.mjs)
+
+云端部署建议直接运行这个服务：它会同时提供：
+
+- 前端静态页面（读取 `dist/`）
+- `/api/visits`
+- `/api/summary`
+- 启动后立即抓取新闻，并每 5 分钟自动刷新一次
+
+推荐启动命令：
+
+```bash
+npm run build:fast
+npm run start:server
+```
+
+推荐环境变量：
+
+- `PORT`：云平台分配的端口
+- `HOST=0.0.0.0`
+- `DATA_DIR=/app/.data`（或平台挂载的数据目录）
+
+如果云平台支持 Docker，可直接使用仓库根目录下的 `Dockerfile` 构建并部署。
 
 ## 代码检查
 

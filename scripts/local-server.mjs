@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startNewsAutoRefresh } from './update-news.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -166,6 +167,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = Number(process.env.PORT ?? 4173);
+startNewsAutoRefresh({ label: 'local-server:news' });
 server.listen(PORT, '127.0.0.1', () => {
 	// eslint-disable-next-line no-console
 	console.log(`Local server: http://127.0.0.1:${PORT}/`);

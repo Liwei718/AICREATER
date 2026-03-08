@@ -1,10 +1,18 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startNewsAutoRefresh } from '../scripts/update-news.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3001);
-const dataFile = process.env.DATA_FILE || '/var/lib/aicreator/visits.json';
-const summaryFile = process.env.SUMMARY_FILE || '/var/lib/aicreator/summaries.json';
+const host = process.env.HOST || '0.0.0.0';
+const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), '.data');
+const dataFile = process.env.DATA_FILE || path.join(dataDir, 'visits.json');
+const summaryFile = process.env.SUMMARY_FILE || path.join(dataDir, 'summaries.json');
+const distDir = path.resolve(__dirname, '../dist');
 
 const SUMMARY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const allowedHostSuffixes = [
@@ -168,7 +176,74 @@ function json(res, statusCode, body) {
   res.end(data);
 }
 
-const server = http.createServer((req, res) => {
+function contentTypeByExt(ext) {
+  switch (ext) {
+    case '.html':
+      return 'text/html; charset=utf-8';
+    case '.js':
+      return 'text/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.ico':
+      return 'image/x-icon';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+async function sendStaticFile(res, filePath) {
+  const data = await fs.readFile(filePath);
+  res.writeHead(200, {
+    'Content-Type': contentTypeByExt(path.extname(filePath)),
+    'Cache-Control': path.basename(filePath) === 'ai-news.generated.json' ? 'no-store' : 'public, max-age=300',
+  });
+  res.end(data);
+}
+
+async function tryServeStatic(urlPath, res) {
+  const requestPath = urlPath === '/' ? '/index.html' : urlPath;
+  const normalized = path.normalize(decodeURIComponent(requestPath)).replace(/^([.][.][\\/])+/, '');
+  const relativePath = normalized.replace(/^[/\\]+/, '');
+  const candidatePath = path.join(distDir, relativePath);
+
+  if (!candidatePath.startsWith(distDir)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return true;
+  }
+
+  try {
+    const stats = await fs.stat(candidatePath);
+    if (stats.isFile()) {
+      await sendStaticFile(res, candidatePath);
+      return true;
+    }
+  } catch {
+    // fall through to SPA fallback
+  }
+
+  if (!path.extname(relativePath)) {
+    try {
+      await sendStaticFile(res, path.join(distDir, 'index.html'));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+const server = http.createServer(async (req, res) => {
   if (!req.url) {
     json(res, 400, { error: 'bad request' });
     return;
@@ -215,54 +290,63 @@ const server = http.createServer((req, res) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
 
-    fetch(normalized, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'AICreator-SummaryBot/1.0',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`fetch failed: ${response.status}`);
-        }
-        const html = await response.text();
-        const text = stripHtml(html);
-        const summary = summarize(text, 110);
-        if (!summary) {
-          throw new Error('empty summary');
-        }
-
-        summaries = {
-          ...(summaries || {}),
-          [normalized]: {
-            summary,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-
-        summaryWriting = summaryWriting
-          .then(() => writeSummaryCache(summaries))
-          .catch(() => {
-            // ignore disk write errors
-          });
-
-        json(res, 200, { summary });
-      })
-      .catch((error) => {
-        json(res, 502, { error: String(error) });
-      })
-      .finally(() => {
-        clearTimeout(timeout);
+    try {
+      const response = await fetch(normalized, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'AICreator-SummaryBot/1.0',
+          Accept: 'text/html,application/xhtml+xml',
+        },
       });
 
+      if (!response.ok) {
+        throw new Error(`fetch failed: ${response.status}`);
+      }
+
+      const html = await response.text();
+      const text = stripHtml(html);
+      const summary = summarize(text, 110);
+      if (!summary) {
+        throw new Error('empty summary');
+      }
+
+      summaries = {
+        ...(summaries || {}),
+        [normalized]: {
+          summary,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      summaryWriting = summaryWriting
+        .then(() => writeSummaryCache(summaries))
+        .catch(() => {
+          // ignore disk write errors
+        });
+
+      json(res, 200, { summary });
+    } catch (error) {
+      json(res, 502, { error: String(error) });
+    } finally {
+      clearTimeout(timeout);
+    }
+
     return;
+  }
+
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    const served = await tryServeStatic(url.pathname, res);
+    if (served) {
+      return;
+    }
   }
 
   json(res, 404, { error: 'not found' });
 });
 
-server.listen(port, '127.0.0.1', () => {
+startNewsAutoRefresh({ label: 'visit-api:news' });
+
+server.listen(port, host, () => {
   // eslint-disable-next-line no-console
-  console.log(`[visit-api] listening on http://127.0.0.1:${port} (data: ${dataFile})`);
+  console.log(`[visit-api] listening on http://${host}:${port} (data: ${dataFile})`);
 });

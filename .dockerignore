@@ -1,0 +1,9 @@
+node_modules
+dist
+remote-latest
+.git
+.github
+.vscode
+docs
+npm-debug.log*
+.DS_Store
